@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: thugkeed-xmd-bot
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: starter
+    region: oregon  # Change to your preferred region
+    autoDeploy: true
+    mounts:
+      - volume: thugkeed-xmd-auth-volume
+        path: /app/auth_info
+
+volumes:
+  - name: thugkeed-xmd-auth-volume
+    sizeGB: 1
+    region: oregon  # Must match service region
