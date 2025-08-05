@@ -31,4 +31,4 @@ module.exports = async (sock, m, sender) => {
     .on('error', async () => {
       await sock.sendMessage(sender, { text: '❌ Failed to download or convert audio.' });
     });
-};￼Enter
+};
