@@ -1,34 +1,22 @@
-# THUGKEED-XMD WhatsApp Bot
+# 🤖 THUGKEED-MINI
 
-A clean, simple WhatsApp bot built with Baileys, made for the THUGKEED community.
+A **lite animated WhatsApp bot** built by [THUGKEED](https://github.com/thugkeedxxx), powered by [@whiskeysockets/baileys](https://github.com/WhiskeySockets/Baileys).
 
-## Features
-- Simple command handler
-- Owner info & bot info commands
-- Uses phone number pairing with multi-file auth state
-- Easy to customize and expand
-
-## Setup
-
-1. Clone this repo
-2. Run `npm install`
-3. Run `node index.js`
-4. Scan QR code once from terminal to connect your WhatsApp (only the first time)
-5. After connecting, the session will be saved in `auth_info` folder automatically.
-6. Use commands in WhatsApp chat starting with `!`
-
-## Commands
-
-- `!start` - Start message  
-- `!menu` - Command list  
-- `!owner` - Owner contact info  
-- `!repo` - GitHub repo link  
-- `!help` - Help info  
-
-## Customize
-
-Edit `config.js` for your own branding and info.
+> 🔥 Fast | 💡 Simple | 🎭 Animated Replies | ☁️ Ready for Render
 
 ---
 
-Made with ❤️ by THUGKEED
+## 🚀 Features
+
+- `!menu` — Show all commands
+- `!ping` — Ping test
+- `!owner` — Info about THUGKEED
+- `!sticker` — Convert image/video to sticker
+
+---
+
+## 📲 Deployment (Render)
+
+1. Fork this repo or clone it:
+   ```bash
+   git clone https://github.com/thugkeedxxx/THUGKEED-MINI.git
