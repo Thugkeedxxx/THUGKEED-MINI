@@ -21,4 +21,4 @@ RUN mkdir -p ./tmp
 # EXPOSE 3000
 
 # Start the bot
-CMD ["node", "index.js"]￼Enter
+CMD ["node", "index.js"]
