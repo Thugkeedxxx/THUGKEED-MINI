@@ -1,28 +1,30 @@
 {
   "name": "thugkeed-lite-md",
   "version": "1.0.0",
-  "description": "A lightweight WhatsApp bot powered by Baileys, built by THUGKEED TECH.",
+  "description": "THUGKEED-LITE-MD - Lightweight WhatsApp bot with music, quotes, and utility commands.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.6.0",
+    "axios": "^1.6.8",
+    "express": "^4.18.2",
+    "fs-extra": "^11.2.0",
+    "pino": "^8.15.0",
+    "yt-search": "^2.10.7",
+    "ytdl-core": "^4.11.3",
+    "dotenv": "^16.3.1"
+  },
   "keywords": [
-    "whatsapp-bot",
+    "whatsapp",
+    "bot",
     "baileys",
     "music",
-    "thugkeed",
-    "lite-md"
+    "youtube",
+    "quotes",
+    "thugkeed"
   ],
-  "author": "THUGKEED TECH",
-  "license": "MIT",
-  "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.0",
-    "axios": "^1.6.0",
-    "moment": "^2.29.4",
-    "ytdl-core": "^4.11.4",
-    "cheerio": "^1.0.0-rc.12",
-    "dotenv": "^16.3.1",
-    "node-fetch": "^2.6.12",
-    "form-data": "^4.0.0"
-  }
+  "author": "THUGKEED",
+  "license": "MIT"
 }
