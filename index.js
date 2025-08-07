@@ -1,86 +1,111 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
-const { Boom } = require('@hapi/boom');
-const axios = require('axios');
-const pino = require('pino');
-const fs = require('fs');
-const path = require('path');
-const config = require('./config');
+const express = require("express");
+const axios = require("axios");
+const ytdl = require("ytdl-core");
+const app = express();
+require("dotenv").config();
 
-async function fetchSession() {
+const prefix = process.env.PREFIX || ".";
+const port = process.env.PORT || 3000;
+const pairSite = process.env.PAIR_SITE || "https://thugkeed-lite-md-pair.vercel.app"; // your deployed pair site
+
+app.use(express.json());
+
+app.get("/", (req, res) => {
+  res.send(`
+    <h2>🤖 THUGKEED-LITE-MD Bot is Running!</h2>
+    <p><strong>Pair your bot at:</strong> <a href="${pairSite}" target="_blank">${pairSite}</a></p>
+    <p><strong>Command prefix:</strong> ${prefix}</p>
+  `);
+});
+
+// Commands
+app.post("/command", async (req, res) => {
+  const { command, args } = req.body;
+  const fullCommand = `${prefix}${command}`;
   try {
-    const response = await axios.get(`${config.pairSite}/session`);
-    if (!fs.existsSync('./auth_info_multi')) fs.mkdirSync('./auth_info_multi', { recursive: true });
-    fs.writeFileSync('./auth_info_multi/creds.json', JSON.stringify(response.data));
-    console.log('✅ Session data fetched successfully!');
+    switch (fullCommand) {
+      case `${prefix}play`:
+        if (!args || args.length === 0) return res.json({ error: "No song name provided" });
+        const songName = args.join(" ");
+        return await handlePlay(songName, res);
+
+      case `${prefix}image`:
+        if (!args || args.length === 0) return res.json({ error: "No prompt provided" });
+        const prompt = args.join(" ");
+        return await handleImage(prompt, res);
+
+      case `${prefix}video`:
+        if (!args || args.length === 0) return res.json({ error: "No video URL provided" });
+        const videoUrl = args[0];
+        return await handleVideo(videoUrl, res);
+
+      case `${prefix}owner`:
+        return res.json({ message: "Bot by THUGKEED 💀", contact: "https://whatsapp.com/channel/0029VbB7a9v6LwHqDUERef0M" });
+
+      case `${prefix}repo`:
+        return res.json({ message: "GitHub Repo", link: "https://github.com/thugkeedxxx/THUGKEED-LITE-MD" });
+
+      default:
+        return res.json({ error: `Unknown command: ${command}` });
+    }
   } catch (err) {
-    console.error('❌ Failed to fetch session:', err.message);
-    process.exit(1);
+    console.error(err);
+    res.status(500).json({ error: "Command failed!" });
+  }
+});
+
+async function handlePlay(songName, res) {
+  try {
+    const searchUrl = `https://yt-api-2.onrender.com/search?q=${encodeURIComponent(songName)}`;
+    const { data } = await axios.get(searchUrl);
+    const video = data.results[0];
+
+    if (!video) return res.json({ error: "No results found!" });
+
+    const downloadUrl = `https://thug-yt.vercel.app/api/mp3?url=https://www.youtube.com/watch?v=${video.id}`;
+    return res.json({
+      title: video.title,
+      duration: video.duration,
+      download: downloadUrl,
+      note: "🔊 Powered by THUGKEED-LITE-MD"
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to fetch song" });
   }
 }
 
-async function startBot() {
-  await fetchSession();
+async function handleImage(prompt, res) {
+  try {
+    const imgRes = await axios.get(`https://lexica-api.vercel.app/api?q=${encodeURIComponent(prompt)}`);
+    const image = imgRes.data.images[0];
+    if (!image) return res.json({ error: "No image found!" });
 
-  const { state, saveCreds } = await useMultiFileAuthState('auth_info_multi');
-  const { version } = await fetchLatestBaileysVersion();
-
-  const sock = makeWASocket({
-    version,
-    printQRInTerminal: true,
-    auth: state,
-    logger: pino({ level: 'silent' }),
-  });
-
-  sock.ev.on('creds.update', saveCreds);
-
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect } = update;
-    if (connection === 'close') {
-      const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
-      if (reason === DisconnectReason.loggedOut) {
-        console.log('❌ Logged out. Reconnecting...');
-        startBot();
-      }
-    } else if (connection === 'open') {
-      console.log('🤖 THUGKEED-LITE-MD connected to WhatsApp!');
-    }
-  });
-
-  // Load commands dynamically
-  const commands = {};
-  const commandsPath = path.join(__dirname, 'commands');
-  fs.readdirSync(commandsPath).forEach((file) => {
-    if (file.endsWith('.js')) {
-      const command = require(path.join(commandsPath, file));
-      commands[command.name] = command;
-    }
-  });
-
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
-    const msg = messages[0];
-    if (!msg.message || msg.key.fromMe) return;
-
-    const from = msg.key.remoteJid;
-    const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
-    if (!body.startsWith(config.prefix)) return;
-
-    const args = body.slice(config.prefix.length).trim().split(/ +/);
-    const commandName = args.shift().toLowerCase();
-
-    const command = commands[commandName];
-    if (!command) {
-      await sock.sendMessage(from, { text: `❌ Unknown command *${commandName}*.\nType ${config.prefix}menu for the command list.` });
-      return;
-    }
-
-    try {
-      await command.execute(sock, from, args, msg);
-    } catch (err) {
-      console.error('Command error:', err);
-      await sock.sendMessage(from, { text: '❌ An error occurred while executing the command.' });
-    }
-  });
+    return res.json({
+      prompt,
+      image: image.src,
+      note: "🖼️ Generated by THUGKEED-LITE-MD"
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Image generation failed" });
+  }
 }
 
-startBot();
+async function handleVideo(url, res) {
+  try {
+    if (!ytdl.validateURL(url)) return res.json({ error: "Invalid YouTube URL!" });
+    const info = await ytdl.getInfo(url);
+    const format = ytdl.chooseFormat(info.formats, { quality: "18" });
+
+    res.json({
+      title: info.videoDetails.title,
+      download: format.url,
+      note: "🎥 Video by THUGKEED-LITE-MD"
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch video" });
+  }
+}
+
+app.listen(port, () => {
+  console.log(`🤖 THUGKEED-LITE-MD is running on http://localhost:${port}`);
+});
