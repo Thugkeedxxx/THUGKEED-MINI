@@ -1,65 +1,105 @@
-const express = require('express');
-const { default: makeWASocket, useSingleFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
-const { Boom } = require('@hapi/boom');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeInMemoryStore, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const P = require('pino');
 const fs = require('fs');
-const pino = require('pino');
-const app = express();
-const PORT = process.env.PORT || 3000;
+const axios = require('axios');
+const moment = require('moment');
+const ytdl = require('ytdl-core');
+require('dotenv').config();
 
-const { state, saveState } = useSingleFileAuthState('./auth.json');
+const prefix = process.env.PREFIX || '!';
+const OWNER = process.env.OWNER_NUMBER || '2349012345678';
+
+const store = makeInMemoryStore({
+  logger: P().child({ level: 'silent', stream: 'store' })
+});
+
+store?.readFromFile('./baileys_store.json');
+setInterval(() => {
+  store?.writeToFile('./baileys_store.json');
+}, 10_000);
 
 async function startBot() {
+  const { state, saveCreds } = await useMultiFileAuthState('auth');
+  const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({
-    logger: pino({ level: 'silent' }),
+    version,
+    printQRInTerminal: true,
     auth: state,
-    printQRInTerminal: true
+    logger: P({ level: 'silent' }),
+    browser: ['THUGKEED-LITE-MD', 'Chrome', '1.0.0']
   });
 
-  sock.ev.on('creds.update', saveState);
+  store.bind(sock.ev);
 
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect } = update;
-    if (connection === 'close') {
-      const shouldReconnect = (lastDisconnect.error = Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-      console.log('Connection closed. Reconnecting...', shouldReconnect);
-      if (shouldReconnect) startBot();
-    } else if (connection === 'open') {
-      console.log('✅ THUGKEED-MINI BOT CONNECTED');
-    }
-  });
-
-  sock.ev.on('messages.upsert', async (m) => {
-    const msg = m.messages[0];
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
 
     const from = msg.key.remoteJid;
-    const body = msg.message.conversation || msg.message.extendedTextMessage?.text;
+    const type = Object.keys(msg.message)[0];
+    const body = type === 'conversation'
+      ? msg.message.conversation
+      : type === 'extendedTextMessage'
+      ? msg.message.extendedTextMessage.text
+      : '';
 
-    if (!body) return;
+    if (!body.startsWith(prefix)) return;
+    const args = body.slice(prefix.length).trim().split(/ +/);
+    const command = args.shift().toLowerCase();
 
-    const reply = (text) => {
-      sock.sendMessage(from, { text }, { quoted: msg });
-    };
+    // --- THUGKEED Commands ---
+    if (command === 'ping') {
+      await sock.sendMessage(from, { text: '```THUGKEED-LITE-MD is Online ✅```' }, { quoted: msg });
+    }
 
-    // 🧠 Basic Commands
-    if (body === '!ping') return reply('🏓 Pong!');
-    if (body === '!owner') return reply('👑 THUGKEED\nwa.me/2347049474372');
-    if (body === '!menu') return reply(`
-*🤖 THUGKEED-MINI MENU*
-> !ping - Test Bot
-> !owner - Bot Owner
-> !sticker - Image to Sticker
-> !menu - Show this Menu
-    `);
+    if (command === 'owner') {
+      await sock.sendMessage(from, { text: `👑 Owner: wa.me/${OWNER}` }, { quoted: msg });
+    }
 
-    // 🧊 Sticker Feature
-    if (body === '!sticker' && msg.message.imageMessage) {
-      const stream = await downloadMediaMessage(msg, 'buffer');
-      await sock.sendMessage(from, { sticker: stream }, { quoted: msg });
+    if (command === 'play') {
+      const query = args.join(' ');
+      if (!query) return sock.sendMessage(from, { text: 'Please provide a song name.' }, { quoted: msg });
+
+      try {
+        const ytSearch = await axios.get(`https://yt.btch.bz/search?query=${encodeURIComponent(query)}`);
+        const video = ytSearch.data[0];
+
+        if (!video || !video.videoId) {
+          return sock.sendMessage(from, { text: 'No results found.' }, { quoted: msg });
+        }
+
+        const info = await ytdl.getInfo(`https://www.youtube.com/watch?v=${video.videoId}`);
+        const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
+        const audioUrl = audioFormats[0].url;
+
+        await sock.sendMessage(from, {
+          audio: { url: audioUrl },
+          mimetype: 'audio/mp4',
+          fileName: `${video.title}.mp3`
+        }, { quoted: msg });
+
+        await sock.sendMessage(from, {
+          text: `🎶 Downloaded by *THUGKEED-LITE-MD*\n\n📌 Title: ${video.title}\n🔗 Source: YouTube`,
+        }, { quoted: msg });
+
+      } catch (err) {
+        console.log(err);
+        sock.sendMessage(from, { text: 'Failed to download.' }, { quoted: msg });
+      }
     }
   });
+
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect } = update;
+    if (connection === 'close') {
+      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      if (shouldReconnect) startBot();
+    } else if (connection === 'open') {
+      console.log('✅ BOT CONNECTED - THUGKEED-LITE-MD');
+    }
+  });
+
+  sock.ev.on('creds.update', saveCreds);
 }
 
 startBot();
-app.get('/', (req, res) => res.send('🤖 THUGKEED-MINI is running!'));
-app.listen(PORT, () => console.log(`🌐 Server running on http://localhost:${PORT}`));
