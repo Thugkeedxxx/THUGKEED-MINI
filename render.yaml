@@ -1,7 +1,7 @@
 services:
   - type: web
-    name: thugkeed-mini
+    name: thugkeed-lite-md
     env: node
+    buildCommand: npm install
+    startCommand: npm start
     plan: free
-    buildCommand: 'npm install'
-    startCommand: 'node index.js'
