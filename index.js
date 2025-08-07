@@ -1,105 +1,108 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeInMemoryStore, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
-const P = require('pino');
+require('dotenv').config();
+const { default: makeWASocket, useSingleFileAuthState, fetchLatestBaileysVersion, DisconnectReason } = require('@whiskeysockets/baileys');
+const { Boom } = require('@hapi/boom');
 const fs = require('fs');
 const axios = require('axios');
-const moment = require('moment');
+const yts = require('yt-search');
 const ytdl = require('ytdl-core');
-require('dotenv').config();
 
-const prefix = process.env.PREFIX || '!';
-const OWNER = process.env.OWNER_NUMBER || '2349012345678';
+const { state, saveState } = useSingleFileAuthState('./auth_info.json');
 
-const store = makeInMemoryStore({
-  logger: P().child({ level: 'silent', stream: 'store' })
-});
-
-store?.readFromFile('./baileys_store.json');
-setInterval(() => {
-  store?.writeToFile('./baileys_store.json');
-}, 10_000);
+const prefix = process.env.PREFIX || '.';
 
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState('auth');
-  const { version } = await fetchLatestBaileysVersion();
+  const { version, isLatest } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({
     version,
-    printQRInTerminal: true,
     auth: state,
-    logger: P({ level: 'silent' }),
-    browser: ['THUGKEED-LITE-MD', 'Chrome', '1.0.0']
+    printQRInTerminal: true
   });
 
-  store.bind(sock.ev);
+  sock.ev.on('creds.update', saveState);
 
-  sock.ev.on('messages.upsert', async ({ messages }) => {
+  sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect } = update;
+    if (connection === 'close') {
+      const shouldReconnect = (lastDisconnect.error = Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+      if (shouldReconnect) startBot();
+    } else if (connection === 'open') {
+      console.log('✅ THUGKEED-LITE-MD is now connected!');
+    }
+  });
+
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
 
     const from = msg.key.remoteJid;
-    const type = Object.keys(msg.message)[0];
-    const body = type === 'conversation'
-      ? msg.message.conversation
-      : type === 'extendedTextMessage'
-      ? msg.message.extendedTextMessage.text
-      : '';
+    const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
 
     if (!body.startsWith(prefix)) return;
-    const args = body.slice(prefix.length).trim().split(/ +/);
-    const command = args.shift().toLowerCase();
 
-    // --- THUGKEED Commands ---
-    if (command === 'ping') {
-      await sock.sendMessage(from, { text: '```THUGKEED-LITE-MD is Online ✅```' }, { quoted: msg });
-    }
+    const command = body.slice(prefix.length).trim().split(/ +/).shift().toLowerCase();
+    const args = body.trim().split(/ +/).slice(1);
 
-    if (command === 'owner') {
-      await sock.sendMessage(from, { text: `👑 Owner: wa.me/${OWNER}` }, { quoted: msg });
-    }
+    console.log(`📥 Command: ${command} | From: ${from}`);
 
-    if (command === 'play') {
-      const query = args.join(' ');
-      if (!query) return sock.sendMessage(from, { text: 'Please provide a song name.' }, { quoted: msg });
-
-      try {
-        const ytSearch = await axios.get(`https://yt.btch.bz/search?query=${encodeURIComponent(query)}`);
-        const video = ytSearch.data[0];
-
-        if (!video || !video.videoId) {
-          return sock.sendMessage(from, { text: 'No results found.' }, { quoted: msg });
-        }
-
-        const info = await ytdl.getInfo(`https://www.youtube.com/watch?v=${video.videoId}`);
-        const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
-        const audioUrl = audioFormats[0].url;
-
+    // Commands
+    switch (command) {
+      case 'menu':
         await sock.sendMessage(from, {
-          audio: { url: audioUrl },
-          mimetype: 'audio/mp4',
-          fileName: `${video.title}.mp3`
-        }, { quoted: msg });
+          text: `👋 *Welcome to THUGKEED-LITE-MD*
 
+Prefix: *${prefix}*
+
+📚 *Available Commands:*
+${prefix}menu
+${prefix}play <song name>
+${prefix}owner
+${prefix}repo`
+        });
+        break;
+
+      case 'play':
+        if (!args[0]) return await sock.sendMessage(from, { text: '❌ Please provide a song name.' });
+        const search = await yts(args.join(' '));
+        const song = search.videos[0];
+        if (!song) return await sock.sendMessage(from, { text: '❌ Song not found.' });
+
+        const title = song.title;
+        const url = song.url;
+        const info = await ytdl.getInfo(url);
+        const audio = ytdl(url, { filter: 'audioonly' });
+
+        const filePath = `./${title}.mp3`;
+        const writeStream = fs.createWriteStream(filePath);
+        audio.pipe(writeStream);
+        writeStream.on('finish', async () => {
+          const audioBuffer = fs.readFileSync(filePath);
+          await sock.sendMessage(from, {
+            audio: audioBuffer,
+            mimetype: 'audio/mp4',
+            fileName: `${title}.mp3`
+          });
+          fs.unlinkSync(filePath);
+        });
+        break;
+
+      case 'owner':
         await sock.sendMessage(from, {
-          text: `🎶 Downloaded by *THUGKEED-LITE-MD*\n\n📌 Title: ${video.title}\n🔗 Source: YouTube`,
-        }, { quoted: msg });
+          text: `👑 *Owner:* THUGKEED
+📞 WhatsApp: https://wa.me/2347049474372
+📢 Channel: https://whatsapp.com/channel/0029VbB7a9v6LwHqDUERef0M`
+        });
+        break;
 
-      } catch (err) {
-        console.log(err);
-        sock.sendMessage(from, { text: 'Failed to download.' }, { quoted: msg });
-      }
+      case 'repo':
+        await sock.sendMessage(from, {
+          text: `📦 GitHub Repo: https://github.com/thugkeedxxx/THUGKEED-LITE-MD`
+        });
+        break;
+
+      default:
+        await sock.sendMessage(from, { text: `❓ Unknown command: *${command}*` });
     }
   });
-
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update;
-    if (connection === 'close') {
-      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      if (shouldReconnect) startBot();
-    } else if (connection === 'open') {
-      console.log('✅ BOT CONNECTED - THUGKEED-LITE-MD');
-    }
-  });
-
-  sock.ev.on('creds.update', saveCreds);
 }
 
 startBot();
